@@ -25,6 +25,9 @@ let write output ts log =
   in
 
   Lwt_io.with_file ~mode:Lwt_io.output output (fun out ->
+    Lwt_io.fprintf out "STARTED %f\n" ts
+    >>= fun () ->
+
     Lwt_list.iter_s (fun (time, key) ->
       begin match key with
       | Backspace ->
@@ -84,7 +87,7 @@ let record () =
     in
     loop []
 
-let playback file =
+let playback speed file =
   let inp = Lwt_io.lines_of_file file in
 
   let rec loop ln =
@@ -95,35 +98,54 @@ let playback file =
     | None -> 
       return ()
     | Some line ->
-      let delay, key =
-        try 
-          let delay', key' = String.split line ~by:" " in
-          let key = 
-            match key' with
-            | "DEL" -> Backspace
-            | _     -> Normal (Char.chr @@ int_of_string key')
-          in
-          float_of_string delay', key
-        with
-        | Invalid_argument "Char.chr" | Failure "float_of_string" | Not_found ->
+      let parts = String.nsplit line ~by:" " in
+      match parts with
+      | ["STARTED"; time] ->
+        begin match Unix.gmtime @@ float_of_string time with
+        | { Unix.tm_sec; tm_min; tm_hour; tm_mday; tm_mon; tm_year } ->
+          let month = tm_mon + 1 in
+          let year = tm_year + 1900 in
+          Lwt_io.printf "* Log starts on %d/%d/%d, %02d:%02d:%02d UTC.\n"
+            month tm_mday year tm_hour tm_min tm_sec
+          >>= fun () ->
+          continue ()
+        | exception Failure "float_of_string" ->
           Printf.fprintf stderr "\nInvalid input on line %d of %s.\n" ln file ;
           exit 1
-      in
-      Lwt_unix.sleep delay
-      >>= fun () ->
-      begin match key with
-      | Normal c ->
-        Lwt_io.write_char Lwt_io.stdout c
-      | Backspace ->
-        Lwt_io.write Lwt_io.stdout backspace'
-      end
-      >>= fun () ->
-      continue ()
+        end
+
+      | [delay'; key'] ->
+        let delay, key =
+          try 
+            let key = 
+              match key' with
+              | "DEL" -> Backspace
+              | _     -> Normal (Char.chr @@ int_of_string key')
+            in
+            float_of_string delay', key
+          with
+          | Invalid_argument "Char.chr" | Failure "float_of_string" | Not_found ->
+            Printf.fprintf stderr "\nInvalid input on line %d of %s.\n" ln file ;
+            exit 1
+        in
+        Lwt_unix.sleep (delay /. speed)
+        >>= fun () ->
+        begin match key with
+        | Normal c ->
+          Lwt_io.write_char Lwt_io.stdout c
+        | Backspace ->
+          Lwt_io.write Lwt_io.stdout backspace'
+        end
+        >>= fun () ->
+        continue ()
+      | _ ->
+        Printf.fprintf stderr "\nUnexpected input on line %d of %s.\n" ln file ;
+        exit 1
   in
 
   loop 1 
 
-let main ~play ~file () =
+let main ~play ~file ~speed () =
   if not play then
     (* Recording mode. *)
     if Sys.file_exists file then
@@ -139,11 +161,12 @@ let main ~play ~file () =
     >>= fun () ->
     exit 1
   else
-    playback file
+    playback speed file
 
 let () =
   let file = ref "" in
   let play = ref false in
+  let speed = ref 1.0 in
 
   let usage =
     sprintf "Usage: %s [options] <file>"
@@ -156,7 +179,8 @@ let () =
     else exit 1
   and specs = Arg.[
     "--help", Unit show_usage, "";
-    "-play", Set play, " Play back the file instead of recording to it."
+    "-play", Set play, " Play back the file instead of recording to it.";
+    "-speed", Set_float speed, " Playback speed. Defaults to 1.0x."
   ]
   in
   let specs = Arg.align specs in
@@ -171,4 +195,9 @@ let () =
 
   Arg.parse specs anon_fun usage ;
 
-  Lwt_main.run (main ~play:!play ~file:!file ())
+  if !speed = 0. then
+    show_usage () ;
+
+  Lwt_main.run (
+    main ~play:!play ~file:!file ~speed:!speed ()
+  )
