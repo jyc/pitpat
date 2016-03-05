@@ -1,0 +1,4 @@
+# begin mk _tags
+true: package(batteries), package(lwt), package(lwt.unix)
+# end
+true: thread, safe_string

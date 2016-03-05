@@ -1,0 +1,12 @@
+# The project name. Used to name library files, the top binary, and the docdir.
+project = "notes"
+# The ocamlfind package name.
+package = "notes"
+# A list of ocamlfind packages required by this project.
+requires = [
+    "batteries"
+    "lwt"
+    "lwt.unix"
+]
+# A list of additional flags to pass to ocamlbuild.
+flags = []

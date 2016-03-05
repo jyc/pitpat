@@ -1,0 +1,5 @@
+# begin mk META
+requires = "batteries lwt lwt.unix"
+archive(byte) = "notes.cma"
+archive(native) = "notes.cmxa"
+# end
