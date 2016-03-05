@@ -26,7 +26,6 @@ With [car](https://github.com/jonathanyc/car):
 # Uses
 
 - Keeping a journal on your computer.
-  just plain text files.
 
 # License
 
