@@ -146,22 +146,17 @@ let playback speed file =
   loop 1 
 
 let main ~play ~file ~speed () =
-  if not play then
+  if Sys.file_exists file then
+    playback speed file
+  else if not play then
     (* Recording mode. *)
-    if Sys.file_exists file then
-      Lwt_io.fprintf Lwt_io.stderr "A file already exists at %s.\n" file
-      >>= fun () ->
-      exit 1
-    else
-      record ()
-      >>= fun (ts, log) ->
-      write file ts log
-  else if not (Sys.file_exists file) then 
+    record ()
+    >>= fun (ts, log) ->
+    write file ts log
+  else
     Lwt_io.fprintf Lwt_io.stderr "No file found at %s.\n" file
     >>= fun () ->
     exit 1
-  else
-    playback speed file
 
 let () =
   let file = ref "" in
