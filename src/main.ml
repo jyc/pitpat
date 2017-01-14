@@ -12,6 +12,13 @@ type key =
 type entry = float * key
 type log = entry list
 
+(* Get the number of columns in the current terminal using tput. *)
+let get_terminal_columns () =
+  let tput_in = Unix.open_process_in "tput cols" in
+  let curr_cols = int_of_string (input_line tput_in) in
+  close_in tput_in ;
+  curr_cols
+
 let write output ts log =
   let log' =
     (* Kind of lame that we have to reverse it multiple times in order for the
@@ -27,6 +34,8 @@ let write output ts log =
   Lwt_io.with_file ~mode:Lwt_io.output output (fun out ->
     Lwt_io.fprintf out "STARTED %f\n" ts
     >>= fun () ->
+    Lwt_io.fprintf out "COLS %d\n" (get_terminal_columns ())
+    >>= fun () ->
 
     Lwt_list.iter_s (fun (time, key) ->
       begin match key with
@@ -37,7 +46,6 @@ let write output ts log =
       end
     ) log' 
   )
-
 
 let record () =
   let ts = Unix.gettimeofday () in
@@ -109,35 +117,53 @@ let playback speed file =
             month tm_mday year tm_hour tm_min tm_sec
           >>= fun () ->
           continue ()
-        | exception Failure "float_of_string" ->
+        | exception Failure _ ->
           Printf.fprintf stderr "\nInvalid input on line %d of %s.\n" ln file ;
           exit 1
         end
 
-      | [delay'; key'] ->
-        let delay, key =
-          try 
-            let key = 
-              match key' with
-              | "DEL" -> Backspace
-              | _     -> Normal (Char.chr @@ int_of_string key')
-            in
-            float_of_string delay', key
-          with
-          | Invalid_argument "Char.chr" | Failure "float_of_string" | Not_found ->
-            Printf.fprintf stderr "\nInvalid input on line %d of %s.\n" ln file ;
-            exit 1
-        in
-        Lwt_unix.sleep (delay /. speed)
-        >>= fun () ->
-        begin match key with
-        | Normal c ->
-          Lwt_io.write_char Lwt_io.stdout c
-        | Backspace ->
-          Lwt_io.write Lwt_io.stdout backspace'
-        end
+      | ["COLS"; cols'] ->
+        let cols = int_of_string cols' in
+        let curr_cols = get_terminal_columns () in
+        (if curr_cols < cols then
+           Lwt_io.fprintf Lwt_io.stderr
+             "* Warning: the playback terminal has less columns than the \
+              recording terminal.\n\
+              * This may cause backspacing to behave unusually.\n"
+         else return ())
         >>= fun () ->
         continue ()
+
+      | [delay'; key'] ->
+        begin match float_of_string delay' with
+        (* Silently ignore this. We want to be able to add new commands in the
+           future that will look like 'DOSOMETHING ARGS ...'. In order to allow
+           older versions to replay those, just ignore it when we see something
+           that looks like a command (a non-float) and continue. *)
+        | exception Failure _ -> continue ()
+        | delay ->
+          let key =
+            try
+              match key' with
+              | "DEL" -> Backspace
+              | _ -> Normal (Char.chr @@ int_of_string key')
+            with
+            | Invalid_argument _ | Not_found ->
+              Printf.fprintf stderr "\nInvalid input on line %d of %s.\n" ln file ;
+              exit 1
+          in
+          Lwt_unix.sleep (delay /. speed)
+          >>= fun () ->
+          begin match key with
+          | Normal c ->
+            Lwt_io.write_char Lwt_io.stdout c
+          | Backspace ->
+            Lwt_io.write Lwt_io.stdout backspace'
+          end
+          >>= fun () ->
+          continue ()
+        end
+
       | _ ->
         Printf.fprintf stderr "\nUnexpected input on line %d of %s.\n" ln file ;
         exit 1
