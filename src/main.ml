@@ -125,11 +125,13 @@ let playback speed file =
       | ["COLS"; cols'] ->
         let cols = int_of_string cols' in
         let curr_cols = get_terminal_columns () in
-        (if curr_cols < cols then
+        (if curr_cols <> cols then
            Lwt_io.fprintf Lwt_io.stderr
-             "* Warning: the playback terminal has less columns than the \
-              recording terminal.\n\
+             "* Warning: the width of this terminal isn't the same as in the \
+              recording.\n\
+              * (current: %d columns, recording: %d columns)\n\
               * This may cause backspacing to behave unusually.\n"
+             curr_cols cols
          else return ())
         >>= fun () ->
         continue ()
